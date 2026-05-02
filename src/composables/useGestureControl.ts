@@ -24,16 +24,29 @@ const MODEL_URL =
 const PAN_SENSITIVITY = 800
 const ZOOM_DEAD_ZONE = 0.005
 const ROTATE_DEAD_ZONE = 0.008
+// Większy deadzone dla obrotu pięścią — naturalne drgania podczas pan nie powinny obracać mapy.
+const FIST_ROTATE_DEAD_ZONE = 0.025
 
 interface Vec {
   x: number
   y: number
 }
 
-function palmCenter(landmarks: { x: number; y: number }[]): Vec {
+type Landmark = { x: number; y: number }
+
+function palmCenter(landmarks: Landmark[]): Vec {
   // landmark 9 = base of middle finger (good palm-center proxy)
   const lm = landmarks[9]
   return { x: 1 - lm.x, y: lm.y } // mirror x to match selfie-view
+}
+
+function fistAngle(landmarks: Landmark[]): number {
+  // wektor nadgarstek (0) → MCP środkowego palca (9) — oś przez całą dłoń.
+  const w = landmarks[0]
+  const m = landmarks[9]
+  const wx = 1 - w.x
+  const mx = 1 - m.x
+  return Math.atan2(m.y - w.y, mx - wx)
 }
 
 export function useGestureControl(events: GestureControlEvents) {
@@ -49,6 +62,7 @@ export function useGestureControl(events: GestureControlEvents) {
   let stream: MediaStream | null = null
   let rafId = 0
   let lastPanPos: Vec | null = null
+  let lastFistAngle: number | null = null
   let lastTransform: { dist: number; angle: number } | null = null
   let drawingUtils: DrawingUtils | null = null
 
@@ -56,6 +70,7 @@ export function useGestureControl(events: GestureControlEvents) {
     if (mode.value === next) return
     mode.value = next
     lastPanPos = null
+    lastFistAngle = null
     lastTransform = null
     events.onModeChange?.(next)
   }
@@ -75,14 +90,25 @@ export function useGestureControl(events: GestureControlEvents) {
       detectedGesture.value = cat
       if (cat === 'Closed_Fist') {
         const center = palmCenter(hands[0])
+        const angle = fistAngle(hands[0])
         if (mode.value !== 'pan') {
           setMode('pan')
           lastPanPos = center
-        } else if (lastPanPos) {
-          const dx = (center.x - lastPanPos.x) * PAN_SENSITIVITY
-          const dy = (center.y - lastPanPos.y) * PAN_SENSITIVITY
+          lastFistAngle = angle
+        } else {
+          if (lastPanPos) {
+            const dx = (center.x - lastPanPos.x) * PAN_SENSITIVITY
+            const dy = (center.y - lastPanPos.y) * PAN_SENSITIVITY
+            if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) events.onPan?.(dx, dy)
+          }
+          if (lastFistAngle !== null) {
+            let dAngle = angle - lastFistAngle
+            if (dAngle > Math.PI) dAngle -= 2 * Math.PI
+            if (dAngle < -Math.PI) dAngle += 2 * Math.PI
+            if (Math.abs(dAngle) > FIST_ROTATE_DEAD_ZONE) events.onRotate?.(dAngle)
+          }
           lastPanPos = center
-          if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) events.onPan?.(dx, dy)
+          lastFistAngle = angle
         }
       } else {
         setMode('idle')
