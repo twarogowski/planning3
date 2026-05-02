@@ -13,7 +13,7 @@ import { defaults as defaultControls, ScaleLine } from 'ol/control'
 import { apply } from 'ol-mapbox-style'
 import type { TransportTask } from '@/data/mockTasks'
 
-const VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron'
+const VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/dark'
 
 const props = defineProps<{
   tasks: TransportTask[]
@@ -67,8 +67,8 @@ function buildFeatures(tasks: TransportTask[], highlightId?: string | null) {
           text: task.origin.name.split(',')[0],
           offsetY: -14,
           font: '12px ui-sans-serif, system-ui, sans-serif',
-          fill: new Fill({ color: '#0f172a' }),
-          stroke: new Stroke({ color: '#ffffff', width: 3 }),
+          fill: new Fill({ color: '#f8fafc' }),
+          stroke: new Stroke({ color: '#0f172a', width: 3 }),
         }),
       }),
     )
@@ -86,8 +86,8 @@ function buildFeatures(tasks: TransportTask[], highlightId?: string | null) {
           text: task.destination.name.split(',')[0],
           offsetY: -14,
           font: '12px ui-sans-serif, system-ui, sans-serif',
-          fill: new Fill({ color: '#0f172a' }),
-          stroke: new Stroke({ color: '#ffffff', width: 3 }),
+          fill: new Fill({ color: '#f8fafc' }),
+          stroke: new Stroke({ color: '#0f172a', width: 3 }),
         }),
       }),
     )
