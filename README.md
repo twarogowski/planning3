@@ -6,14 +6,14 @@ Makieta aplikacji webowej do planowania zleceń transportowych na mapie.
 
 - **Bun.js** — runtime i package manager
 - **Vue 3** + **Vite 6** + **TypeScript**
-- **OpenLayers** — mapa (warstwa rastrowa OSM + warstwy wektorowe dla tras i punktów)
+- **OpenLayers** + **ol-mapbox-style** — mapa wektorowa (vector tiles z [OpenFreeMap](https://openfreemap.org/), styl _positron_) + warstwy wektorowe dla tras i punktów
 - **Tailwind CSS v4** + komponenty w stylu **shadcn-vue** (reka-ui jako primitives)
 
 Frontend-only, brak backendu. Dane zleceń pochodzą z `src/data/mockTasks.ts`.
 
 ## Funkcje (mockup)
 
-- Mapa zajmująca 100% ekranu (OSM jako tło, wektorowe trasy/punkty z OL).
+- Mapa zajmująca 100% ekranu (wektorowe tile'y z OpenFreeMap, wektorowe trasy/punkty OL na wierzchu).
 - Przycisk **„Zlecenia do zaplanowania"** w prawym górnym rogu otwiera lewy overlay panel.
 - Filtrowanie zleceń wg statusu: Nowe / W planowaniu / Zaplanowane.
 - Hover na zleceniu w panelu podświetla trasę na mapie.
@@ -47,4 +47,4 @@ src/
 - Drag & drop zleceń na pojazdy / kierowców.
 - Optymalizacja kolejności przejazdów (VRP).
 - Backend + auth.
-- Pełne wektorowe tile’y (MapTiler / vector PMTiles) zamiast OSM raster.
+- Drag & drop zleceń pomiędzy panelem a mapą.

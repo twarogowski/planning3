@@ -2,9 +2,7 @@
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import Map from 'ol/Map'
 import View from 'ol/View'
-import TileLayer from 'ol/layer/Tile'
 import VectorLayer from 'ol/layer/Vector'
-import OSM from 'ol/source/OSM'
 import VectorSource from 'ol/source/Vector'
 import Feature from 'ol/Feature'
 import Point from 'ol/geom/Point'
@@ -12,7 +10,10 @@ import LineString from 'ol/geom/LineString'
 import { fromLonLat } from 'ol/proj'
 import { Style, Stroke, Circle as CircleStyle, Fill, Text } from 'ol/style'
 import { defaults as defaultControls, ScaleLine } from 'ol/control'
+import { apply } from 'ol-mapbox-style'
 import type { TransportTask } from '@/data/mockTasks'
+
+const VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron'
 
 const props = defineProps<{
   tasks: TransportTask[]
@@ -105,11 +106,6 @@ onMounted(() => {
     controls: defaultControls({ attribution: true, zoom: true }).extend([
       new ScaleLine({ units: 'metric' }),
     ]),
-    layers: [
-      new TileLayer({ source: new OSM() }),
-      new VectorLayer({ source: routesSource }),
-      new VectorLayer({ source: pointsSource }),
-    ],
     view: new View({
       center: fromLonLat([19.45, 52.0]),
       zoom: 6.4,
@@ -117,6 +113,20 @@ onMounted(() => {
       maxZoom: 18,
     }),
   })
+
+  const overlayLayers = [
+    new VectorLayer({ source: routesSource }),
+    new VectorLayer({ source: pointsSource }),
+  ]
+
+  apply(map, VECTOR_STYLE_URL)
+    .then(() => {
+      for (const layer of overlayLayers) map?.addLayer(layer)
+    })
+    .catch((err) => {
+      console.error('Nie udało się załadować stylu wektorowego', err)
+      for (const layer of overlayLayers) map?.addLayer(layer)
+    })
 
   buildFeatures(props.tasks, props.highlightedTaskId)
 })
