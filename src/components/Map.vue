@@ -163,6 +163,31 @@ onBeforeUnmount(() => {
   map?.setTarget(undefined)
   map = null
 })
+
+function panByPixels(dxPx: number, dyPx: number) {
+  if (!map) return
+  const view = map.getView()
+  const res = view.getResolution()
+  if (res === undefined) return
+  view.adjustCenter([-dxPx * res, dyPx * res])
+}
+
+function zoomByFactor(factor: number) {
+  if (!map || !Number.isFinite(factor) || factor <= 0) return
+  map.getView().adjustResolution(1 / factor)
+}
+
+function rotateByRadians(delta: number) {
+  if (!map || !Number.isFinite(delta)) return
+  map.getView().adjustRotation(delta)
+}
+
+function resetRotation() {
+  if (!map) return
+  map.getView().animate({ rotation: 0, duration: 250 })
+}
+
+defineExpose({ panByPixels, zoomByFactor, rotateByRadians, resetRotation })
 </script>
 
 <template>
