@@ -137,7 +137,11 @@ onMounted(() => {
     new VectorLayer({ source: pointsSource }),
   ]
 
-  apply(map, VECTOR_STYLE_URL)
+  // `getFonts` istnieje runtime'owo w ol-mapbox-style, ale nie jest w typach – stąd cast.
+  // No-op, by uniknąć fetchowania webfontów (@fontsource/...) z jsdelivr.
+  apply(map, VECTOR_STYLE_URL, {
+    getFonts: (fonts: string[]) => fonts,
+  } as Parameters<typeof apply>[2])
     .then(() => {
       for (const layer of overlayLayers) map?.addLayer(layer)
     })
