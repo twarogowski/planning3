@@ -10,3 +10,6 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+# kopiowane z node_modules przez `bun run prepare:wasm`
+public/mediapipe-wasm

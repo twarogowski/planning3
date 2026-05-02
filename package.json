@@ -4,8 +4,9 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "prepare:wasm": "rm -rf public/mediapipe-wasm && mkdir -p public/mediapipe-wasm && cp -r node_modules/@mediapipe/tasks-vision/wasm/. public/mediapipe-wasm/",
+    "dev": "bun run prepare:wasm && vite",
+    "build": "bun run prepare:wasm && vue-tsc --noEmit && vite build",
     "preview": "vite preview --host"
   },
   "dependencies": {

@@ -15,7 +15,9 @@ export interface GestureControlEvents {
   onModeChange?: (mode: GestureMode) => void
 }
 
-const WASM_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm'
+// WASM kopiowane z node_modules do public/ przez skrypt `prepare:wasm` (patrz package.json),
+// dzięki czemu unikamy problemów z CORS / MIME / cache CDN.
+const WASM_BASE = '/mediapipe-wasm'
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task'
 
@@ -170,11 +172,20 @@ export function useGestureControl(events: GestureControlEvents) {
       await video.play()
 
       const vision = await FilesetResolver.forVisionTasks(WASM_BASE)
-      recognizer = await GestureRecognizer.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
-        numHands: 2,
-        runningMode: 'VIDEO',
-      })
+      try {
+        recognizer = await GestureRecognizer.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
+          numHands: 2,
+          runningMode: 'VIDEO',
+        })
+      } catch (gpuErr) {
+        console.warn('Inicjalizacja GPU nie powiodła się, próbuję CPU', gpuErr)
+        recognizer = await GestureRecognizer.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: 'CPU' },
+          numHands: 2,
+          runningMode: 'VIDEO',
+        })
+      }
 
       const canvas = canvasRef.value
       if (canvas) {
