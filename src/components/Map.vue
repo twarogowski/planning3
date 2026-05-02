@@ -95,6 +95,23 @@ function buildFeatures(tasks: TransportTask[], highlightId?: string | null) {
   }
 }
 
+function handleKey(e: KeyboardEvent) {
+  if (!map) return
+  const view = map.getView()
+  const step = Math.PI / 12 // 15°
+
+  if (e.key === 'q' || e.key === 'Q') {
+    view.animate({ rotation: view.getRotation() - step, duration: 150 })
+    e.preventDefault()
+  } else if (e.key === 'e' || e.key === 'E') {
+    view.animate({ rotation: view.getRotation() + step, duration: 150 })
+    e.preventDefault()
+  } else if (e.key === 'r' || e.key === 'R') {
+    view.animate({ rotation: 0, duration: 250 })
+    e.preventDefault()
+  }
+}
+
 onMounted(() => {
   if (!mapEl.value) return
 
@@ -111,6 +128,7 @@ onMounted(() => {
       zoom: 6.4,
       minZoom: 3,
       maxZoom: 18,
+      enableRotation: true,
     }),
   })
 
@@ -128,6 +146,9 @@ onMounted(() => {
       for (const layer of overlayLayers) map?.addLayer(layer)
     })
 
+  mapEl.value.addEventListener('keydown', handleKey)
+  mapEl.value.focus({ preventScroll: true })
+
   buildFeatures(props.tasks, props.highlightedTaskId)
 })
 
@@ -138,11 +159,17 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  mapEl.value?.removeEventListener('keydown', handleKey)
   map?.setTarget(undefined)
   map = null
 })
 </script>
 
 <template>
-  <div ref="mapEl" class="absolute inset-0 h-full w-full" />
+  <div
+    ref="mapEl"
+    tabindex="0"
+    aria-label="Mapa zleceń transportowych. Strzałki przesuwają, plus i minus zoomują, Q i E obracają, R resetuje obrót."
+    class="absolute inset-0 h-full w-full outline-none focus:outline-none"
+  />
 </template>
