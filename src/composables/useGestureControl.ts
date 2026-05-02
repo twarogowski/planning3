@@ -6,7 +6,7 @@ import {
   type GestureRecognizerResult,
 } from '@mediapipe/tasks-vision'
 
-export type GestureMode = 'idle' | 'pan' | 'transform'
+export type GestureMode = 'idle' | 'pan' | 'zoom'
 
 export interface GestureControlEvents {
   onPan?: (dxPx: number, dyPx: number) => void
@@ -22,10 +22,11 @@ const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task'
 
 const PAN_SENSITIVITY = 800
-const ZOOM_DEAD_ZONE = 0.005
-const ROTATE_DEAD_ZONE = 0.008
 // Większy deadzone dla obrotu pięścią — naturalne drgania podczas pan nie powinny obracać mapy.
 const FIST_ROTATE_DEAD_ZONE = 0.025
+// Czułość zoomu otwartą dłonią: ruch pełnej wysokości kadru ≈ exp(0.5 * SENS) ≈ 4.5x dla SENS=3.
+const PALM_ZOOM_SENSITIVITY = 3.0
+const PALM_ZOOM_DEAD_ZONE = 0.003
 
 interface Vec {
   x: number
@@ -63,7 +64,7 @@ export function useGestureControl(events: GestureControlEvents) {
   let rafId = 0
   let lastPanPos: Vec | null = null
   let lastFistAngle: number | null = null
-  let lastTransform: { dist: number; angle: number } | null = null
+  let lastZoomY: number | null = null
   let drawingUtils: DrawingUtils | null = null
 
   function setMode(next: GestureMode) {
@@ -71,7 +72,7 @@ export function useGestureControl(events: GestureControlEvents) {
     mode.value = next
     lastPanPos = null
     lastFistAngle = null
-    lastTransform = null
+    lastZoomY = null
     events.onModeChange?.(next)
   }
 
@@ -85,65 +86,55 @@ export function useGestureControl(events: GestureControlEvents) {
       return
     }
 
-    if (hands.length === 1) {
-      const cat = gestures[0]?.[0]?.categoryName ?? 'None'
-      detectedGesture.value = cat
-      if (cat === 'Closed_Fist') {
-        const center = palmCenter(hands[0])
-        const angle = fistAngle(hands[0])
-        if (mode.value !== 'pan') {
-          setMode('pan')
-          lastPanPos = center
-          lastFistAngle = angle
-        } else {
-          if (lastPanPos) {
-            const dx = (center.x - lastPanPos.x) * PAN_SENSITIVITY
-            const dy = (center.y - lastPanPos.y) * PAN_SENSITIVITY
-            if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) events.onPan?.(dx, dy)
-          }
-          if (lastFistAngle !== null) {
-            let dAngle = angle - lastFistAngle
-            if (dAngle > Math.PI) dAngle -= 2 * Math.PI
-            if (dAngle < -Math.PI) dAngle += 2 * Math.PI
-            if (Math.abs(dAngle) > FIST_ROTATE_DEAD_ZONE) events.onRotate?.(dAngle)
-          }
-          lastPanPos = center
-          lastFistAngle = angle
-        }
-      } else {
-        setMode('idle')
+    // Single-hand-only sterowanie. Drugą rękę ignorujemy (ujmujemy tylko hands[0]).
+    const cat = gestures[0]?.[0]?.categoryName ?? 'None'
+    detectedGesture.value = cat
+
+    if (cat === 'Closed_Fist') {
+      const center = palmCenter(hands[0])
+      const angle = fistAngle(hands[0])
+      if (mode.value !== 'pan') {
+        setMode('pan')
+        lastPanPos = center
+        lastFistAngle = angle
+        return
       }
+      if (lastPanPos) {
+        const dx = (center.x - lastPanPos.x) * PAN_SENSITIVITY
+        const dy = (center.y - lastPanPos.y) * PAN_SENSITIVITY
+        if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) events.onPan?.(dx, dy)
+      }
+      if (lastFistAngle !== null) {
+        let dAngle = angle - lastFistAngle
+        if (dAngle > Math.PI) dAngle -= 2 * Math.PI
+        if (dAngle < -Math.PI) dAngle += 2 * Math.PI
+        if (Math.abs(dAngle) > FIST_ROTATE_DEAD_ZONE) events.onRotate?.(dAngle)
+      }
+      lastPanPos = center
+      lastFistAngle = angle
       return
     }
 
-    // two hands
-    detectedGesture.value = `${gestures[0]?.[0]?.categoryName ?? '?'} + ${gestures[1]?.[0]?.categoryName ?? '?'}`
-    const c1 = palmCenter(hands[0])
-    const c2 = palmCenter(hands[1])
-    const dx = c2.x - c1.x
-    const dy = c2.y - c1.y
-    const dist = Math.hypot(dx, dy)
-    const angle = Math.atan2(dy, dx)
-
-    if (mode.value !== 'transform') {
-      setMode('transform')
-      lastTransform = { dist, angle }
+    if (cat === 'Open_Palm') {
+      const center = palmCenter(hands[0])
+      if (mode.value !== 'zoom') {
+        setMode('zoom')
+        lastZoomY = center.y
+        return
+      }
+      if (lastZoomY !== null) {
+        const dy = center.y - lastZoomY // dodatnie = ręka w dół
+        if (Math.abs(dy) > PALM_ZOOM_DEAD_ZONE) {
+          // ręka w górę (dy<0) → factor>1 → zoom in
+          const factor = Math.exp(-dy * PALM_ZOOM_SENSITIVITY)
+          events.onZoom?.(factor)
+        }
+      }
+      lastZoomY = center.y
       return
     }
-    if (!lastTransform) {
-      lastTransform = { dist, angle }
-      return
-    }
 
-    const factor = lastTransform.dist > 0 ? dist / lastTransform.dist : 1
-    let dAngle = angle - lastTransform.angle
-    if (dAngle > Math.PI) dAngle -= 2 * Math.PI
-    if (dAngle < -Math.PI) dAngle += 2 * Math.PI
-
-    if (Math.abs(factor - 1) > ZOOM_DEAD_ZONE) events.onZoom?.(factor)
-    if (Math.abs(dAngle) > ROTATE_DEAD_ZONE) events.onRotate?.(dAngle)
-
-    lastTransform = { dist, angle }
+    setMode('idle')
   }
 
   function drawOverlay(result: GestureRecognizerResult) {
@@ -201,14 +192,14 @@ export function useGestureControl(events: GestureControlEvents) {
       try {
         recognizer = await GestureRecognizer.createFromOptions(vision, {
           baseOptions: { modelAssetPath: MODEL_URL, delegate: 'GPU' },
-          numHands: 2,
+          numHands: 1,
           runningMode: 'VIDEO',
         })
       } catch (gpuErr) {
         console.warn('Inicjalizacja GPU nie powiodła się, próbuję CPU', gpuErr)
         recognizer = await GestureRecognizer.createFromOptions(vision, {
           baseOptions: { modelAssetPath: MODEL_URL, delegate: 'CPU' },
-          numHands: 2,
+          numHands: 1,
           runningMode: 'VIDEO',
         })
       }
