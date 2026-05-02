@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { ListChecks } from 'lucide-vue-next'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ListChecks, Sun, Moon } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import MapView from '@/components/Map.vue'
 import TasksPanel from '@/components/TasksPanel.vue'
 import GestureCamera from '@/components/GestureCamera.vue'
 import { mockTasks } from '@/data/mockTasks'
+import { useTheme } from '@/composables/useTheme'
 
 const panelOpen = ref(false)
 const highlightedTaskId = ref<string | null>(null)
@@ -24,6 +25,24 @@ function onGestureZoom(factor: number) {
 function onGestureRotate(delta: number) {
   mapRef.value?.rotateByRadians(delta)
 }
+
+const { theme, toggle: toggleTheme } = useTheme()
+
+function handleGlobalKey(e: KeyboardEvent) {
+  if (e.key !== 'd' && e.key !== 'D') return
+  const t = e.target as HTMLElement | null
+  if (
+    t &&
+    (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+  ) {
+    return
+  }
+  e.preventDefault()
+  toggleTheme()
+}
+
+onMounted(() => window.addEventListener('keydown', handleGlobalKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', handleGlobalKey))
 </script>
 
 <template>
@@ -32,6 +51,7 @@ function onGestureRotate(delta: number) {
       ref="mapRef"
       :tasks="tasks"
       :highlighted-task-id="highlightedTaskId"
+      :theme="theme"
     />
 
     <TasksPanel
@@ -43,6 +63,19 @@ function onGestureRotate(delta: number) {
     />
 
     <div class="pointer-events-none absolute right-4 top-4 z-10 flex items-start gap-2">
+      <div class="pointer-events-auto">
+        <Button
+          variant="outline"
+          size="icon"
+          :title="`Motyw (D) — aktualnie ${theme === 'dark' ? 'ciemny' : 'jasny'}`"
+          class="shadow-md"
+          @click="toggleTheme"
+        >
+          <Moon v-if="theme === 'light'" />
+          <Sun v-else />
+        </Button>
+      </div>
+
       <div class="pointer-events-auto">
         <GestureCamera
           @pan="onGesturePan"

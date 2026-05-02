@@ -11,19 +11,30 @@ import { fromLonLat } from 'ol/proj'
 import { Style, Stroke, Circle as CircleStyle, Fill, Text } from 'ol/style'
 import { defaults as defaultControls, ScaleLine } from 'ol/control'
 import { apply } from 'ol-mapbox-style'
+import type BaseLayer from 'ol/layer/Base'
 import type { TransportTask } from '@/data/mockTasks'
 
-const VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/dark'
+const STYLE_FOR_THEME = {
+  light: 'https://tiles.openfreemap.org/styles/positron',
+  dark: 'https://tiles.openfreemap.org/styles/dark',
+}
 
-const props = defineProps<{
-  tasks: TransportTask[]
-  highlightedTaskId?: string | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    tasks: TransportTask[]
+    highlightedTaskId?: string | null
+    theme?: 'light' | 'dark'
+  }>(),
+  { theme: 'dark' },
+)
 
 const mapEl = ref<HTMLDivElement | null>(null)
 let map: Map | null = null
 let routesSource: VectorSource | null = null
 let pointsSource: VectorSource | null = null
+let routesLayer: VectorLayer | null = null
+let pointsLayer: VectorLayer | null = null
+let basemapLayers: BaseLayer[] = []
 
 const STATUS_COLORS: Record<TransportTask['status'], string> = {
   new: '#0ea5e9',
@@ -35,6 +46,10 @@ function buildFeatures(tasks: TransportTask[], highlightId?: string | null) {
   if (!routesSource || !pointsSource) return
   routesSource.clear()
   pointsSource.clear()
+
+  const isDark = props.theme === 'dark'
+  const labelFill = isDark ? '#f8fafc' : '#0f172a'
+  const labelHalo = isDark ? '#0f172a' : '#ffffff'
 
   for (const task of tasks) {
     const color = STATUS_COLORS[task.status]
@@ -61,14 +76,14 @@ function buildFeatures(tasks: TransportTask[], highlightId?: string | null) {
         image: new CircleStyle({
           radius: isHighlighted ? 8 : 6,
           fill: new Fill({ color }),
-          stroke: new Stroke({ color: '#ffffff', width: 2 }),
+          stroke: new Stroke({ color: labelHalo, width: 2 }),
         }),
         text: new Text({
           text: task.origin.name.split(',')[0],
           offsetY: -14,
           font: '12px ui-sans-serif, system-ui, sans-serif',
-          fill: new Fill({ color: '#f8fafc' }),
-          stroke: new Stroke({ color: '#0f172a', width: 3 }),
+          fill: new Fill({ color: labelFill }),
+          stroke: new Stroke({ color: labelHalo, width: 3 }),
         }),
       }),
     )
@@ -79,15 +94,15 @@ function buildFeatures(tasks: TransportTask[], highlightId?: string | null) {
       new Style({
         image: new CircleStyle({
           radius: isHighlighted ? 8 : 6,
-          fill: new Fill({ color: '#ffffff' }),
+          fill: new Fill({ color: labelHalo }),
           stroke: new Stroke({ color, width: 3 }),
         }),
         text: new Text({
           text: task.destination.name.split(',')[0],
           offsetY: -14,
           font: '12px ui-sans-serif, system-ui, sans-serif',
-          fill: new Fill({ color: '#f8fafc' }),
-          stroke: new Stroke({ color: '#0f172a', width: 3 }),
+          fill: new Fill({ color: labelFill }),
+          stroke: new Stroke({ color: labelHalo, width: 3 }),
         }),
       }),
     )
@@ -112,11 +127,44 @@ function handleKey(e: KeyboardEvent) {
   }
 }
 
+function bringOverlaysToTop() {
+  if (!map) return
+  const all = map.getLayers().getArray()
+  if (routesLayer && all.includes(routesLayer)) map.removeLayer(routesLayer)
+  if (pointsLayer && all.includes(pointsLayer)) map.removeLayer(pointsLayer)
+  if (routesLayer) map.addLayer(routesLayer)
+  if (pointsLayer) map.addLayer(pointsLayer)
+}
+
+function applyMapStyle(styleUrl: string) {
+  if (!map) return
+  for (const l of basemapLayers) map.removeLayer(l)
+  basemapLayers = []
+
+  const before = new Set(map.getLayers().getArray())
+  // `getFonts` istnieje runtime'owo w ol-mapbox-style, ale nie jest w typach – stąd cast.
+  // No-op, by uniknąć fetchowania webfontów (@fontsource/...) z jsdelivr.
+  apply(map, styleUrl, {
+    getFonts: (fonts: string[]) => fonts,
+  } as Parameters<typeof apply>[2])
+    .then(() => {
+      if (!map) return
+      basemapLayers = map.getLayers().getArray().filter((l) => !before.has(l))
+      bringOverlaysToTop()
+    })
+    .catch((err) => {
+      console.error('Nie udało się załadować stylu wektorowego', err)
+      bringOverlaysToTop()
+    })
+}
+
 onMounted(() => {
   if (!mapEl.value) return
 
   routesSource = new VectorSource()
   pointsSource = new VectorSource()
+  routesLayer = new VectorLayer({ source: routesSource })
+  pointsLayer = new VectorLayer({ source: pointsSource })
 
   map = new Map({
     target: mapEl.value,
@@ -132,23 +180,7 @@ onMounted(() => {
     }),
   })
 
-  const overlayLayers = [
-    new VectorLayer({ source: routesSource }),
-    new VectorLayer({ source: pointsSource }),
-  ]
-
-  // `getFonts` istnieje runtime'owo w ol-mapbox-style, ale nie jest w typach – stąd cast.
-  // No-op, by uniknąć fetchowania webfontów (@fontsource/...) z jsdelivr.
-  apply(map, VECTOR_STYLE_URL, {
-    getFonts: (fonts: string[]) => fonts,
-  } as Parameters<typeof apply>[2])
-    .then(() => {
-      for (const layer of overlayLayers) map?.addLayer(layer)
-    })
-    .catch((err) => {
-      console.error('Nie udało się załadować stylu wektorowego', err)
-      for (const layer of overlayLayers) map?.addLayer(layer)
-    })
+  applyMapStyle(STYLE_FOR_THEME[props.theme])
 
   mapEl.value.addEventListener('keydown', handleKey)
   mapEl.value.focus({ preventScroll: true })
@@ -160,6 +192,14 @@ watch(
   () => [props.tasks, props.highlightedTaskId] as const,
   ([tasks, highlight]) => buildFeatures(tasks, highlight),
   { deep: true },
+)
+
+watch(
+  () => props.theme,
+  (next) => {
+    applyMapStyle(STYLE_FOR_THEME[next])
+    buildFeatures(props.tasks, props.highlightedTaskId)
+  },
 )
 
 onBeforeUnmount(() => {
