@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, computed } from 'vue'
+import { onMounted, onBeforeUnmount, computed, ref } from 'vue'
 import { Hand, Loader2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { useGestureControl } from '@/composables/useGestureControl'
+import { useGestureControl, type GestureMode } from '@/composables/useGestureControl'
 
 const emit = defineEmits<{
   pan: [dx: number, dy: number]
@@ -10,11 +10,14 @@ const emit = defineEmits<{
   rotate: [delta: number]
 }>()
 
+const previewVisible = ref(false)
+
 const {
   isActive,
   isLoading,
   error,
   mode,
+  detectedGesture,
   videoRef,
   canvasRef,
   start,
@@ -40,12 +43,29 @@ function handleGlobalKey(e: KeyboardEvent) {
     return
   }
   e.preventDefault()
-  toggle()
+  if (e.shiftKey) {
+    previewVisible.value = !previewVisible.value
+  } else {
+    toggle()
+  }
+}
+
+const MODE_LABEL: Record<GestureMode, string> = {
+  idle: 'bezczynne',
+  pan: 'pan + obrót',
+  zoom: 'zoom',
+}
+
+const MODE_DOT: Record<GestureMode, string> = {
+  idle: 'bg-slate-400',
+  pan: 'bg-sky-500',
+  zoom: 'bg-amber-500',
 }
 
 const title = computed(() => {
   if (isLoading.value) return 'Sterowanie gestami — ładowanie modelu…'
-  return `Sterowanie gestami (G) — ${isActive.value ? 'włączone, tryb: ' + mode.value : 'wyłączone'}`
+  const state = isActive.value ? `włączone (${MODE_LABEL[mode.value]})` : 'wyłączone'
+  return `Sterowanie gestami — ${state}\nG: włącz/wyłącz · Shift+G: pokaż/ukryj podgląd`
 })
 
 onMounted(() => window.addEventListener('keydown', handleGlobalKey))
@@ -54,16 +74,54 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleGlobalKey))
 
 <template>
   <div class="relative">
-    <video
-      ref="videoRef"
-      muted
-      playsinline
-      class="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
-    />
-    <canvas
-      ref="canvasRef"
-      class="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
-    />
+    <!-- Video + canvas. Gdy preview ukryty, kontener jest poza viewportem (ale w pełnym rozmiarze, żeby
+         przeglądarka nie ograniczała dekodowania klatek). -->
+    <div
+      :class="[
+        previewVisible
+          ? 'absolute right-0 top-full mt-2 h-[180px] w-[240px] overflow-hidden rounded-md border border-border bg-slate-900 shadow-lg'
+          : 'pointer-events-none fixed -left-[9999px] top-0 h-[240px] w-[320px]',
+      ]"
+    >
+      <video
+        ref="videoRef"
+        muted
+        playsinline
+        class="absolute inset-0 h-full w-full object-cover"
+        style="transform: scaleX(-1)"
+      />
+      <canvas ref="canvasRef" class="absolute inset-0 h-full w-full" />
+
+      <template v-if="previewVisible">
+        <div
+          v-if="!isActive && !isLoading"
+          class="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs text-white/80"
+        >
+          <Hand class="size-6 opacity-70" />
+          <span>Kamera wyłączona — naciśnij G</span>
+        </div>
+        <div
+          v-if="isLoading"
+          class="absolute inset-0 flex items-center justify-center gap-2 text-xs text-white"
+        >
+          <Loader2 class="size-4 animate-spin" />
+          <span>Ładowanie modelu…</span>
+        </div>
+        <div
+          v-if="isActive"
+          class="absolute left-1 top-1 flex items-center gap-1 rounded bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white"
+        >
+          <span :class="['inline-block h-1.5 w-1.5 rounded-full', MODE_DOT[mode]]" />
+          {{ MODE_LABEL[mode] }}
+        </div>
+        <div
+          v-if="isActive"
+          class="absolute right-1 top-1 rounded bg-black/60 px-2 py-0.5 text-[10px] text-white"
+        >
+          {{ detectedGesture }}
+        </div>
+      </template>
+    </div>
 
     <Button
       :variant="isActive ? 'default' : 'outline'"

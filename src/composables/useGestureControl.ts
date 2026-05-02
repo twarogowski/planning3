@@ -27,6 +27,8 @@ const FIST_ROTATE_DEAD_ZONE = 0.025
 // Czułość zoomu otwartą dłonią: ruch pełnej wysokości kadru ≈ exp(0.5 * SENS) ≈ 4.5x dla SENS=3.
 const PALM_ZOOM_SENSITIVITY = 3.0
 const PALM_ZOOM_DEAD_ZONE = 0.003
+// Ile klatek z rzędu musi być "nie nasz gest", żeby wyjść z aktywnego trybu (tłumi jitter klasyfikatora).
+const IDLE_GRACE_FRAMES = 4
 
 interface Vec {
   x: number
@@ -65,6 +67,7 @@ export function useGestureControl(events: GestureControlEvents) {
   let lastPanPos: Vec | null = null
   let lastFistAngle: number | null = null
   let lastZoomY: number | null = null
+  let idleFrames = 0
   let drawingUtils: DrawingUtils | null = null
 
   function setMode(next: GestureMode) {
@@ -73,7 +76,15 @@ export function useGestureControl(events: GestureControlEvents) {
     lastPanPos = null
     lastFistAngle = null
     lastZoomY = null
+    idleFrames = 0
     events.onModeChange?.(next)
+  }
+
+  function maybeIdle() {
+    // Sklasyfikatory MediaPipe potrafią migać („None" dla 1-2 klatek).
+    // Wpadamy w idle dopiero po IDLE_GRACE_FRAMES kolejnych klatek bez naszego gestu.
+    idleFrames++
+    if (idleFrames >= IDLE_GRACE_FRAMES) setMode('idle')
   }
 
   function processResult(result: GestureRecognizerResult) {
@@ -82,7 +93,7 @@ export function useGestureControl(events: GestureControlEvents) {
 
     if (hands.length === 0) {
       detectedGesture.value = '—'
-      setMode('idle')
+      maybeIdle()
       return
     }
 
@@ -91,6 +102,7 @@ export function useGestureControl(events: GestureControlEvents) {
     detectedGesture.value = cat
 
     if (cat === 'Closed_Fist') {
+      idleFrames = 0
       const center = palmCenter(hands[0])
       const angle = fistAngle(hands[0])
       if (mode.value !== 'pan') {
@@ -116,6 +128,7 @@ export function useGestureControl(events: GestureControlEvents) {
     }
 
     if (cat === 'Open_Palm') {
+      idleFrames = 0
       const center = palmCenter(hands[0])
       if (mode.value !== 'zoom') {
         setMode('zoom')
@@ -134,7 +147,7 @@ export function useGestureControl(events: GestureControlEvents) {
       return
     }
 
-    setMode('idle')
+    maybeIdle()
   }
 
   function drawOverlay(result: GestureRecognizerResult) {
