@@ -17,6 +17,7 @@ import {
   ChevronRight,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import DatePicker from '@/components/ui/DatePicker.vue'
 import { cn } from '@/lib/utils'
 import { hubs } from '@/data/hubs'
 import { vendorById } from '@/data/vendors'
@@ -165,11 +166,7 @@ function pickRoute(r: RoutePlan) {
         <div class="space-y-4 p-4">
           <div>
             <label class="mb-1 block text-xs font-medium">Data dystrybucji</label>
-            <input
-              v-model="state.selectedDate"
-              type="date"
-              class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+            <DatePicker v-model="state.selectedDate" />
           </div>
 
           <div>
