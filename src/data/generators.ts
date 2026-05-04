@@ -82,8 +82,9 @@ function ordersForHub(rng: () => number, hub: Hub, idStart: number): DeliveryOrd
     hub.size === 'L' ? randInt(rng, 38, 50) : hub.size === 'M' ? randInt(rng, 24, 34) : randInt(rng, 15, 22)
   const orders: DeliveryOrder[] = []
   for (let i = 0; i < target; i++) {
-    // Promień ~55 km — przy ~17 stopach na trasie daje średni odcinek ~14 km między stopami (po NN).
-    const lonLat = randomNear(rng, hub.lonLat, 55)
+    // Promień 120 km od huba — twardy limit dla mockowanych zleceń
+    // (po NN przy ~50 zleceniach na hub średni odcinek między stopami ~14 km).
+    const lonLat = randomNear(rng, hub.lonLat, 120)
     const vendor = pick(rng, vendors)
     const parcelCount = randInt(rng, 1, 6)
     const weightKg = randFloat(rng, 50, 220, 1)
