@@ -3,17 +3,14 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ListChecks, Sun, Moon } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import MapView from '@/components/Map.vue'
-import TasksPanel from '@/components/TasksPanel.vue'
+import PlannerPanel from '@/components/PlannerPanel.vue'
 import GestureCamera from '@/components/GestureCamera.vue'
-import { mockTasks } from '@/data/mockTasks'
 import { useTheme } from '@/composables/useTheme'
+import { usePlanner } from '@/composables/usePlanner'
 
-const panelOpen = ref(false)
-const highlightedTaskId = ref<string | null>(null)
+const planner = usePlanner()
 
-const tasks = ref(mockTasks)
-const pendingCount = computed(() => tasks.value.filter((t) => t.status !== 'planned').length)
-
+const panelOpen = ref(true)
 const mapRef = ref<InstanceType<typeof MapView> | null>(null)
 
 function onGesturePan(dx: number, dy: number) {
@@ -27,6 +24,20 @@ function onGestureRotate(delta: number) {
 }
 
 const { theme, toggle: toggleTheme } = useTheme()
+
+const cardLabel = computed(() => {
+  switch (planner.state.view) {
+    case 'setup':
+      return `Planowanie · ${planner.ordersForSelected.value.length} zleceń`
+    case 'running':
+      return `Solver · ${Math.round(planner.currentRun.value?.progressPct ?? 0)}%`
+    case 'solutions':
+      return `Rozwiązania · ${planner.state.solutions.length}`
+    case 'solution-detail':
+      return `Rozwiązanie · ${planner.selectedSolution.value?.routes.length ?? 0} tras`
+  }
+  return 'Planer'
+})
 
 function handleGlobalKey(e: KeyboardEvent) {
   if (e.key !== 'd' && e.key !== 'D') return
@@ -47,20 +58,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleGlobalKey))
 
 <template>
   <div class="relative h-screen w-screen overflow-hidden">
-    <MapView
-      ref="mapRef"
-      :tasks="tasks"
-      :highlighted-task-id="highlightedTaskId"
-      :theme="theme"
-    />
+    <MapView ref="mapRef" :theme="theme" />
 
-    <TasksPanel
-      :open="panelOpen"
-      :tasks="tasks"
-      :highlighted-task-id="highlightedTaskId"
-      @close="panelOpen = false"
-      @highlight="(id) => (highlightedTaskId = id)"
-    />
+    <PlannerPanel :open="panelOpen" @close="panelOpen = false" />
 
     <div class="pointer-events-none absolute right-4 top-4 z-10 flex items-start gap-2">
       <div class="pointer-events-auto">
@@ -87,10 +87,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleGlobalKey))
       <div class="pointer-events-auto">
         <Button v-if="!panelOpen" size="lg" class="shadow-lg" @click="panelOpen = true">
           <ListChecks />
-          Zlecenia do zaplanowania
-          <span class="ml-1 rounded-full bg-primary-foreground/20 px-2 py-0.5 text-xs">
-            {{ pendingCount }}
-          </span>
+          {{ cardLabel }}
         </Button>
       </div>
     </div>

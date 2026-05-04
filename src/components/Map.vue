@@ -8,11 +8,13 @@ import Feature from 'ol/Feature'
 import Point from 'ol/geom/Point'
 import LineString from 'ol/geom/LineString'
 import { fromLonLat } from 'ol/proj'
-import { Style, Stroke, Circle as CircleStyle, Fill, Text } from 'ol/style'
+import { Style, Stroke, Circle as CircleStyle, Fill, Text, RegularShape } from 'ol/style'
 import { defaults as defaultControls, ScaleLine } from 'ol/control'
 import { apply } from 'ol-mapbox-style'
 import type BaseLayer from 'ol/layer/Base'
-import type { TransportTask } from '@/data/mockTasks'
+import { hubs, hubById } from '@/data/hubs'
+import type { Hub, RoutePlan } from '@/types/domain'
+import { usePlanner } from '@/composables/usePlanner'
 
 const STYLE_FOR_THEME = {
   light: 'https://tiles.openfreemap.org/styles/positron',
@@ -21,119 +23,160 @@ const STYLE_FOR_THEME = {
 
 const props = withDefaults(
   defineProps<{
-    tasks: TransportTask[]
-    highlightedTaskId?: string | null
     theme?: 'light' | 'dark'
   }>(),
   { theme: 'dark' },
 )
 
+const planner = usePlanner()
+
 const mapEl = ref<HTMLDivElement | null>(null)
 let map: Map | null = null
+let hubsSource: VectorSource | null = null
 let routesSource: VectorSource | null = null
-let pointsSource: VectorSource | null = null
+let stopsSource: VectorSource | null = null
+let hubsLayer: VectorLayer | null = null
 let routesLayer: VectorLayer | null = null
-let pointsLayer: VectorLayer | null = null
+let stopsLayer: VectorLayer | null = null
 let basemapLayers: BaseLayer[] = []
 
-const STATUS_COLORS: Record<TransportTask['status'], string> = {
-  new: '#0ea5e9',
-  planning: '#f59e0b',
-  planned: '#22c55e',
+// Paleta dla tras — tyle kolorów żeby ~25 różnych kierowców było rozróżnialnych.
+const ROUTE_COLORS = [
+  '#0ea5e9', '#f59e0b', '#22c55e', '#ef4444', '#a855f7',
+  '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#6366f1',
+  '#06b6d4', '#eab308', '#10b981', '#dc2626', '#8b5cf6',
+  '#d946ef', '#0d9488', '#ea580c', '#65a30d', '#4f46e5',
+  '#0891b2', '#ca8a04', '#059669', '#b91c1c', '#7c3aed',
+]
+
+function colorForRoute(routeId: string): string {
+  let h = 0
+  for (let i = 0; i < routeId.length; i++) h = (h * 31 + routeId.charCodeAt(i)) | 0
+  return ROUTE_COLORS[Math.abs(h) % ROUTE_COLORS.length]!
 }
 
-function buildFeatures(tasks: TransportTask[], highlightId?: string | null) {
-  if (!routesSource || !pointsSource) return
+function isDark() {
+  return props.theme === 'dark'
+}
+
+function rebuildHubMarkers() {
+  if (!hubsSource) return
+  hubsSource.clear()
+  const labelFill = isDark() ? '#f8fafc' : '#0f172a'
+  const labelHalo = isDark() ? '#0f172a' : '#ffffff'
+  const selected = new Set(planner.state.selectedHubIds)
+
+  for (const h of hubs) {
+    const isSelected = selected.has(h.id)
+    const f = new Feature({ geometry: new Point(fromLonLat(h.lonLat)), hub: h })
+    f.setStyle(
+      new Style({
+        image: new RegularShape({
+          points: 4,
+          radius: isSelected ? 10 : 7,
+          angle: Math.PI / 4,
+          fill: new Fill({ color: isSelected ? '#0ea5e9' : '#475569' }),
+          stroke: new Stroke({ color: labelHalo, width: 2 }),
+        }),
+        text: new Text({
+          text: h.symbol,
+          offsetY: -18,
+          font: 'bold 11px ui-sans-serif, system-ui, sans-serif',
+          fill: new Fill({ color: labelFill }),
+          stroke: new Stroke({ color: labelHalo, width: 3 }),
+        }),
+      }),
+    )
+    hubsSource.addFeature(f)
+  }
+}
+
+function rebuildRoutesAndStops() {
+  if (!routesSource || !stopsSource) return
   routesSource.clear()
-  pointsSource.clear()
+  stopsSource.clear()
 
-  const isDark = props.theme === 'dark'
-  const labelFill = isDark ? '#f8fafc' : '#0f172a'
-  const labelHalo = isDark ? '#0f172a' : '#ffffff'
+  const sol = planner.selectedSolution.value
+  if (!sol) return
 
-  for (const task of tasks) {
-    const color = STATUS_COLORS[task.status]
-    const isHighlighted = highlightId === task.id
+  const labelFill = isDark() ? '#f8fafc' : '#0f172a'
+  const labelHalo = isDark() ? '#0f172a' : '#ffffff'
+  const selectedRouteId = planner.selectedRouteId.value
 
-    const from = fromLonLat(task.origin.lonLat)
-    const to = fromLonLat(task.destination.lonLat)
+  for (const r of sol.routes) {
+    const color = colorForRoute(r.id)
+    const isHighlighted = !selectedRouteId || selectedRouteId === r.id
+    const opacityMul = selectedRouteId && selectedRouteId !== r.id ? 0.25 : 1
 
-    const line = new Feature({ geometry: new LineString([from, to]), task })
+    // build path: hub -> stop1 -> stop2 -> ... -> hub
+    const hub = hubById.get(r.hubId)
+    if (!hub) continue
+    const coords: number[][] = [fromLonLat(hub.lonLat)]
+    for (const stop of r.stops) {
+      const order = planner.allOrders.find((o) => o.id === stop.orderId)
+      if (order) coords.push(fromLonLat(order.lonLat))
+    }
+    coords.push(fromLonLat(hub.lonLat)) // powrót
+
+    const line = new Feature({
+      geometry: new LineString(coords),
+      route: r,
+    })
     line.setStyle(
       new Style({
         stroke: new Stroke({
-          color,
-          width: isHighlighted ? 5 : 2.5,
-          lineDash: task.status === 'planned' ? undefined : [8, 6],
+          color: hexToRgba(color, opacityMul),
+          width: isHighlighted ? (selectedRouteId === r.id ? 4 : 2.5) : 1.5,
         }),
       }),
     )
     routesSource.addFeature(line)
 
-    const origin = new Feature({ geometry: new Point(from), task, role: 'origin' })
-    origin.setStyle(
-      new Style({
-        image: new CircleStyle({
-          radius: isHighlighted ? 8 : 6,
-          fill: new Fill({ color }),
-          stroke: new Stroke({ color: labelHalo, width: 2 }),
+    // stopy
+    for (const stop of r.stops) {
+      const order = planner.allOrders.find((o) => o.id === stop.orderId)
+      if (!order) continue
+      const f = new Feature({ geometry: new Point(fromLonLat(order.lonLat)), stop, route: r })
+      f.setStyle(
+        new Style({
+          image: new CircleStyle({
+            radius: selectedRouteId === r.id ? 6 : 4,
+            fill: new Fill({ color: hexToRgba(color, opacityMul) }),
+            stroke: new Stroke({ color: labelHalo, width: 1.5 }),
+          }),
+          text:
+            selectedRouteId === r.id
+              ? new Text({
+                  text: String(stop.position + 1),
+                  font: 'bold 10px ui-sans-serif, system-ui, sans-serif',
+                  fill: new Fill({ color: labelFill }),
+                  stroke: new Stroke({ color: labelHalo, width: 2 }),
+                  offsetY: -12,
+                })
+              : undefined,
         }),
-        text: new Text({
-          text: task.origin.name.split(',')[0],
-          offsetY: -14,
-          font: '12px ui-sans-serif, system-ui, sans-serif',
-          fill: new Fill({ color: labelFill }),
-          stroke: new Stroke({ color: labelHalo, width: 3 }),
-        }),
-      }),
-    )
-    pointsSource.addFeature(origin)
-
-    const destination = new Feature({ geometry: new Point(to), task, role: 'destination' })
-    destination.setStyle(
-      new Style({
-        image: new CircleStyle({
-          radius: isHighlighted ? 8 : 6,
-          fill: new Fill({ color: labelHalo }),
-          stroke: new Stroke({ color, width: 3 }),
-        }),
-        text: new Text({
-          text: task.destination.name.split(',')[0],
-          offsetY: -14,
-          font: '12px ui-sans-serif, system-ui, sans-serif',
-          fill: new Fill({ color: labelFill }),
-          stroke: new Stroke({ color: labelHalo, width: 3 }),
-        }),
-      }),
-    )
-    pointsSource.addFeature(destination)
+      )
+      stopsSource.addFeature(f)
+    }
   }
 }
 
-function handleKey(e: KeyboardEvent) {
-  if (!map) return
-  const view = map.getView()
-  const step = Math.PI / 12 // 15°
-
-  if (e.key === 'q' || e.key === 'Q') {
-    view.animate({ rotation: view.getRotation() - step, duration: 150 })
-    e.preventDefault()
-  } else if (e.key === 'e' || e.key === 'E') {
-    view.animate({ rotation: view.getRotation() + step, duration: 150 })
-    e.preventDefault()
-  } else if (e.key === 'r' || e.key === 'R') {
-    view.animate({ rotation: 0, duration: 250 })
-    e.preventDefault()
-  }
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
 function bringOverlaysToTop() {
   if (!map) return
   const all = map.getLayers().getArray()
-  if (routesLayer && all.includes(routesLayer)) map.removeLayer(routesLayer)
-  if (pointsLayer && all.includes(pointsLayer)) map.removeLayer(pointsLayer)
+  for (const l of [routesLayer, hubsLayer, stopsLayer]) {
+    if (l && all.includes(l)) map.removeLayer(l)
+  }
   if (routesLayer) map.addLayer(routesLayer)
-  if (pointsLayer) map.addLayer(pointsLayer)
+  if (hubsLayer) map.addLayer(hubsLayer)
+  if (stopsLayer) map.addLayer(stopsLayer)
 }
 
 function applyMapStyle(styleUrl: string) {
@@ -142,8 +185,6 @@ function applyMapStyle(styleUrl: string) {
   basemapLayers = []
 
   const before = new Set(map.getLayers().getArray())
-  // `getFonts` istnieje runtime'owo w ol-mapbox-style, ale nie jest w typach – stąd cast.
-  // No-op, by uniknąć fetchowania webfontów (@fontsource/...) z jsdelivr.
   apply(map, styleUrl, {
     getFonts: (fonts: string[]) => fonts,
   } as Parameters<typeof apply>[2])
@@ -158,13 +199,32 @@ function applyMapStyle(styleUrl: string) {
     })
 }
 
+function handleKey(e: KeyboardEvent) {
+  if (!map) return
+  const view = map.getView()
+  const step = Math.PI / 12
+
+  if (e.key === 'q' || e.key === 'Q') {
+    view.animate({ rotation: view.getRotation() - step, duration: 150 })
+    e.preventDefault()
+  } else if (e.key === 'e' || e.key === 'E') {
+    view.animate({ rotation: view.getRotation() + step, duration: 150 })
+    e.preventDefault()
+  } else if (e.key === 'r' || e.key === 'R') {
+    view.animate({ rotation: 0, duration: 250 })
+    e.preventDefault()
+  }
+}
+
 onMounted(() => {
   if (!mapEl.value) return
 
+  hubsSource = new VectorSource()
   routesSource = new VectorSource()
-  pointsSource = new VectorSource()
+  stopsSource = new VectorSource()
+  hubsLayer = new VectorLayer({ source: hubsSource })
   routesLayer = new VectorLayer({ source: routesSource })
-  pointsLayer = new VectorLayer({ source: pointsSource })
+  stopsLayer = new VectorLayer({ source: stopsSource })
 
   map = new Map({
     target: mapEl.value,
@@ -173,7 +233,7 @@ onMounted(() => {
     ]),
     view: new View({
       center: fromLonLat([19.45, 52.0]),
-      zoom: 6.4,
+      zoom: 6.2,
       minZoom: 3,
       maxZoom: 18,
       enableRotation: true,
@@ -182,15 +242,40 @@ onMounted(() => {
 
   applyMapStyle(STYLE_FOR_THEME[props.theme])
 
+  // klik na trasie / stopie → wybierz trasę
+  map.on('click', (evt) => {
+    if (!map) return
+    map.forEachFeatureAtPixel(evt.pixel, (feature) => {
+      const route = feature.get('route') as RoutePlan | undefined
+      if (route) {
+        planner.selectRoute(route.id)
+        return true
+      }
+      const hub = feature.get('hub') as Hub | undefined
+      if (hub && planner.state.view === 'setup') {
+        planner.toggleHub(hub.id)
+        return true
+      }
+      return false
+    })
+  })
+
   mapEl.value.addEventListener('keydown', handleKey)
   mapEl.value.focus({ preventScroll: true })
 
-  buildFeatures(props.tasks, props.highlightedTaskId)
+  rebuildHubMarkers()
+  rebuildRoutesAndStops()
 })
 
 watch(
-  () => [props.tasks, props.highlightedTaskId] as const,
-  ([tasks, highlight]) => buildFeatures(tasks, highlight),
+  () => [planner.state.selectedHubIds, planner.state.view] as const,
+  () => rebuildHubMarkers(),
+  { deep: true },
+)
+
+watch(
+  () => [planner.selectedSolution.value, planner.selectedRouteId.value] as const,
+  () => rebuildRoutesAndStops(),
   { deep: true },
 )
 
@@ -198,7 +283,8 @@ watch(
   () => props.theme,
   (next) => {
     applyMapStyle(STYLE_FOR_THEME[next])
-    buildFeatures(props.tasks, props.highlightedTaskId)
+    rebuildHubMarkers()
+    rebuildRoutesAndStops()
   },
 )
 
@@ -215,17 +301,14 @@ function panByPixels(dxPx: number, dyPx: number) {
   if (res === undefined) return
   view.adjustCenter([-dxPx * res, dyPx * res])
 }
-
 function zoomByFactor(factor: number) {
   if (!map || !Number.isFinite(factor) || factor <= 0) return
   map.getView().adjustResolution(1 / factor)
 }
-
 function rotateByRadians(delta: number) {
   if (!map || !Number.isFinite(delta)) return
   map.getView().adjustRotation(delta)
 }
-
 function resetRotation() {
   if (!map) return
   map.getView().animate({ rotation: 0, duration: 250 })
