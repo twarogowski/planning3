@@ -1,10 +1,20 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { onClickOutside, onKeyStroke } from '@vueuse/core'
 import { X } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import RouteEndMapPicker from './RouteEndMapPicker.vue'
+import { hubById } from '@/data/hubs'
+import { usePresets } from '@/composables/usePresets'
 import type { CarFleetPresetItem } from '@/types/domain'
+
+const presetsStore = usePresets()
+const hubLonLat = computed<[number, number] | undefined>(() => {
+  const p = presetsStore.selectedPreset.value
+  if (!p) return undefined
+  return hubById.get(p.hubId)?.lonLat
+})
 
 const props = defineProps<{ open: boolean; item: CarFleetPresetItem | null }>()
 const emit = defineEmits<{
@@ -29,8 +39,7 @@ const form = reactive({
   saturday: false,
   sunday: false,
   routeEndsInCustomLocation: false,
-  routeEndLat: '' as string,
-  routeEndLon: '' as string,
+  routeEnd: null as [number, number] | null,
   carSpeedFactor: 1.0,
   remarks: '',
   samsungBranded: false,
@@ -55,8 +64,7 @@ watch(
       form.saturday = it.saturday
       form.sunday = it.sunday
       form.routeEndsInCustomLocation = it.routeEndsInCustomLocation
-      form.routeEndLon = it.routeEndLocation ? String(it.routeEndLocation[0]) : ''
-      form.routeEndLat = it.routeEndLocation ? String(it.routeEndLocation[1]) : ''
+      form.routeEnd = it.routeEndLocation ? [it.routeEndLocation[0], it.routeEndLocation[1]] : null
       form.carSpeedFactor = it.carSpeedFactor
       form.remarks = it.remarks
       form.samsungBranded = it.userTags.includes('SAMSUNG_BRANDED_DELIVERY')
@@ -75,8 +83,7 @@ watch(
       form.saturday = false
       form.sunday = false
       form.routeEndsInCustomLocation = false
-      form.routeEndLat = ''
-      form.routeEndLon = ''
+      form.routeEnd = null
       form.carSpeedFactor = 1.0
       form.remarks = ''
       form.samsungBranded = false
@@ -95,12 +102,7 @@ onKeyStroke('Escape', () => {
 function submit() {
   const tags: string[] = []
   if (form.samsungBranded) tags.push('SAMSUNG_BRANDED_DELIVERY')
-  let routeEnd: [number, number] | null = null
-  if (form.routeEndsInCustomLocation && form.routeEndLat && form.routeEndLon) {
-    const lat = parseFloat(form.routeEndLat)
-    const lon = parseFloat(form.routeEndLon)
-    if (Number.isFinite(lat) && Number.isFinite(lon)) routeEnd = [lon, lat]
-  }
+  const routeEnd: [number, number] | null = form.routeEndsInCustomLocation ? form.routeEnd : null
   emit('save', {
     carMaxCargoWeight: Number(form.carMaxCargoWeight) || 0,
     carMaxCargoVolume: Number(form.carMaxCargoVolume) || 0,
@@ -229,17 +231,8 @@ const DAYS: { key: keyof typeof form; label: string }[] = [
                 <input v-model="form.routeEndsInCustomLocation" type="checkbox" class="size-4" />
                 Trasa kończy się w zdefiniowanej lokalizacji (np. garaż)
               </label>
-              <div v-if="form.routeEndsInCustomLocation" class="mt-2 grid grid-cols-2 gap-2">
-                <div>
-                  <label class="mb-1 block text-xs font-medium">Szerokość (lat)</label>
-                  <input v-model="form.routeEndLat" type="text" placeholder="np. 50.04"
-                    class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-                </div>
-                <div>
-                  <label class="mb-1 block text-xs font-medium">Długość (lon)</label>
-                  <input v-model="form.routeEndLon" type="text" placeholder="np. 19.97"
-                    class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring" />
-                </div>
+              <div v-if="form.routeEndsInCustomLocation" class="mt-2">
+                <RouteEndMapPicker v-model="form.routeEnd" :center-lon-lat="hubLonLat" />
               </div>
             </div>
           </div>
