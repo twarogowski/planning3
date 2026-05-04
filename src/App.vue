@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import MapView from '@/components/Map.vue'
 import PlannerPanel from '@/components/PlannerPanel.vue'
 import GestureCamera from '@/components/GestureCamera.vue'
+import HelpPopover from '@/components/HelpPopover.vue'
+import { cn } from '@/lib/utils'
 import { useTheme } from '@/composables/useTheme'
 import { usePlanner } from '@/composables/usePlanner'
 
@@ -12,6 +14,9 @@ const planner = usePlanner()
 
 const panelOpen = ref(true)
 const mapRef = ref<InstanceType<typeof MapView> | null>(null)
+
+// Hover-zone w prawym górnym rogu — kontrolki domyślnie ukryte, fade-in 0.3 s przy najechaniu.
+const controlsHovered = ref(false)
 
 function onGesturePan(dx: number, dy: number) {
   mapRef.value?.panByPixels(dx, dy)
@@ -77,8 +82,42 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleGlobalKey))
 
     <PlannerPanel :open="panelOpen" @close="panelOpen = false" />
 
-    <div class="pointer-events-none absolute right-4 top-4 z-10 flex items-start gap-2">
-      <div class="pointer-events-auto">
+    <!-- Hover-zone: pełen obszar dla łapania kursora; kontrolki widoczne tylko przy hoverze. -->
+    <div
+      class="absolute right-0 top-0 z-10 p-3"
+      @mouseenter="controlsHovered = true"
+      @mouseleave="controlsHovered = false"
+    >
+      <div
+        :class="cn(
+          'flex flex-col items-end gap-2 transition-opacity duration-300',
+          controlsHovered ? 'opacity-100' : 'pointer-events-none opacity-0',
+        )"
+      >
+        <Button
+          v-if="!panelOpen"
+          size="icon"
+          class="relative shadow-lg"
+          :title="`Otwórz panel planera — ${cardLabel}`"
+          @click="panelOpen = true"
+        >
+          <ListChecks />
+          <span
+            v-if="planner.state.solutions.length > 0 || planner.ordersForSelected.value.length > 0"
+            class="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-foreground px-1 text-[9px] font-bold text-primary"
+          >
+            {{ planner.state.solutions.length || planner.ordersForSelected.value.length }}
+          </span>
+        </Button>
+
+        <GestureCamera
+          @pan="onGesturePan"
+          @zoom="onGestureZoom"
+          @rotate="onGestureRotate"
+        />
+
+        <HelpPopover />
+
         <Button
           variant="outline"
           size="icon"
@@ -88,21 +127,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleGlobalKey))
         >
           <Moon v-if="theme === 'light'" />
           <Sun v-else />
-        </Button>
-      </div>
-
-      <div class="pointer-events-auto">
-        <GestureCamera
-          @pan="onGesturePan"
-          @zoom="onGestureZoom"
-          @rotate="onGestureRotate"
-        />
-      </div>
-
-      <div class="pointer-events-auto">
-        <Button v-if="!panelOpen" size="lg" class="shadow-lg" @click="panelOpen = true">
-          <ListChecks />
-          {{ cardLabel }}
         </Button>
       </div>
     </div>
