@@ -40,16 +40,31 @@ const cardLabel = computed(() => {
 })
 
 function handleGlobalKey(e: KeyboardEvent) {
-  if (e.key !== 'd' && e.key !== 'D') return
   const t = e.target as HTMLElement | null
-  if (
-    t &&
-    (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
-  ) {
+  const inEditable =
+    !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+
+  // Ctrl+E (lub Cmd+E) — reset localStorage
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'e' || e.key === 'E')) {
+    if (inEditable) return
+    e.preventDefault()
+    if (confirm('Wyczyścić localStorage i przeładować stronę? Wszystkie zapisane rozwiązania znikną.')) {
+      try {
+        localStorage.clear()
+      } catch {
+        /* ignore */
+      }
+      location.reload()
+    }
     return
   }
-  e.preventDefault()
-  toggleTheme()
+
+  // D — przełącznik motywu
+  if (e.key === 'd' || e.key === 'D') {
+    if (inEditable) return
+    e.preventDefault()
+    toggleTheme()
+  }
 }
 
 onMounted(() => window.addEventListener('keydown', handleGlobalKey))

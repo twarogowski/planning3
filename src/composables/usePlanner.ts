@@ -59,9 +59,10 @@ const state = reactive({
   selectedSolutionId: persisted.selectedSolutionId ?? null,
 })
 
-// `currentRun` i `selectedRoute` nie są w localStorage — to ulotny stan UI.
+// `currentRun`, wybór trasy i hover po zleceniu nie są w localStorage — to ulotny stan UI.
 const currentRun = ref<OptimizationRun | null>(null)
 const selectedRouteId = ref<string | null>(null)
+const highlightedOrderId = ref<number | null>(null)
 let cancelHandle: { cancel: () => void } | null = null
 
 watch(
@@ -185,6 +186,10 @@ function selectRoute(id: string | null) {
   selectedRouteId.value = id
 }
 
+function setHighlightedOrder(id: number | null) {
+  if (highlightedOrderId.value !== id) highlightedOrderId.value = id
+}
+
 export function usePlanner() {
   return {
     // raw state
@@ -197,6 +202,7 @@ export function usePlanner() {
     selectedRoute,
     currentRun,
     selectedRouteId,
+    highlightedOrderId,
     // actions
     toggleHub,
     selectAllHubs,
@@ -210,6 +216,7 @@ export function usePlanner() {
     backToSetup,
     goSolutions,
     selectRoute,
+    setHighlightedOrder,
     // refs
     allOrders: ALL_ORDERS,
     allVehicles: ALL_VEHICLES,

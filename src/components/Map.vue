@@ -35,9 +35,11 @@ let map: Map | null = null
 let hubsSource: VectorSource | null = null
 let routesSource: VectorSource | null = null
 let stopsSource: VectorSource | null = null
+let highlightSource: VectorSource | null = null
 let hubsLayer: VectorLayer | null = null
 let routesLayer: VectorLayer | null = null
 let stopsLayer: VectorLayer | null = null
+let highlightLayer: VectorLayer | null = null
 let basemapLayers: BaseLayer[] = []
 
 // Paleta dla tras — tyle kolorów żeby ~25 różnych kierowców było rozróżnialnych.
@@ -171,12 +173,33 @@ function hexToRgba(hex: string, alpha: number): string {
 function bringOverlaysToTop() {
   if (!map) return
   const all = map.getLayers().getArray()
-  for (const l of [routesLayer, hubsLayer, stopsLayer]) {
+  for (const l of [routesLayer, hubsLayer, stopsLayer, highlightLayer]) {
     if (l && all.includes(l)) map.removeLayer(l)
   }
   if (routesLayer) map.addLayer(routesLayer)
   if (hubsLayer) map.addLayer(hubsLayer)
   if (stopsLayer) map.addLayer(stopsLayer)
+  if (highlightLayer) map.addLayer(highlightLayer)
+}
+
+function rebuildHighlight() {
+  if (!highlightSource) return
+  highlightSource.clear()
+  const orderId = planner.highlightedOrderId.value
+  if (!orderId) return
+  const order = planner.allOrders.find((o) => o.id === orderId)
+  if (!order) return
+  const f = new Feature({ geometry: new Point(fromLonLat(order.lonLat)) })
+  f.setStyle(
+    new Style({
+      image: new CircleStyle({
+        radius: 11,
+        fill: new Fill({ color: 'rgba(14, 165, 233, 0.25)' }),
+        stroke: new Stroke({ color: '#0ea5e9', width: 2.5 }),
+      }),
+    }),
+  )
+  highlightSource.addFeature(f)
 }
 
 function applyMapStyle(styleUrl: string) {
@@ -222,9 +245,11 @@ onMounted(() => {
   hubsSource = new VectorSource()
   routesSource = new VectorSource()
   stopsSource = new VectorSource()
+  highlightSource = new VectorSource()
   hubsLayer = new VectorLayer({ source: hubsSource })
   routesLayer = new VectorLayer({ source: routesSource })
   stopsLayer = new VectorLayer({ source: stopsSource })
+  highlightLayer = new VectorLayer({ source: highlightSource })
 
   map = new Map({
     target: mapEl.value,
@@ -260,12 +285,40 @@ onMounted(() => {
     })
   })
 
+  // pointermove → highlight + cursor
+  map.on('pointermove', (evt) => {
+    if (!map || evt.dragging) return
+    let foundOrderId: number | null = null
+    let cursor = ''
+    map.forEachFeatureAtPixel(evt.pixel, (f) => {
+      const stop = f.get('stop') as { orderId: number } | undefined
+      if (stop) {
+        foundOrderId = stop.orderId
+        cursor = 'pointer'
+        return true
+      }
+      if (f.get('route') || f.get('hub')) {
+        cursor = 'pointer'
+        return true
+      }
+      return false
+    })
+    planner.setHighlightedOrder(foundOrderId)
+    if (mapEl.value) mapEl.value.style.cursor = cursor
+  })
+
   mapEl.value.addEventListener('keydown', handleKey)
   mapEl.value.focus({ preventScroll: true })
 
   rebuildHubMarkers()
   rebuildRoutesAndStops()
+  rebuildHighlight()
 })
+
+watch(
+  () => planner.highlightedOrderId.value,
+  () => rebuildHighlight(),
+)
 
 watch(
   () => [planner.state.selectedHubIds, planner.state.view] as const,
@@ -285,6 +338,7 @@ watch(
     applyMapStyle(STYLE_FOR_THEME[next])
     rebuildHubMarkers()
     rebuildRoutesAndStops()
+    rebuildHighlight()
   },
 )
 

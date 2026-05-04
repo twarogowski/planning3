@@ -431,7 +431,12 @@ function pickRoute(r: RoutePlan) {
             <li
               v-for="stop in selectedRoute.stops"
               :key="stop.position"
-              class="px-3 py-2 text-xs"
+              :class="cn(
+                'px-3 py-2 text-xs transition-colors',
+                planner.highlightedOrderId.value === stop.orderId && 'bg-accent ring-1 ring-primary ring-inset',
+              )"
+              @mouseenter="planner.setHighlightedOrder(stop.orderId)"
+              @mouseleave="planner.setHighlightedOrder(null)"
             >
               <div class="flex items-start gap-2">
                 <span class="mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
