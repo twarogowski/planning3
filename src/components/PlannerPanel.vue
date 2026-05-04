@@ -443,9 +443,13 @@ function pickRoute(r: RoutePlan) {
                     <span class="rounded bg-muted px-1.5 py-0.5 text-[10px]">
                       {{ planner.hubById.get(orderById.get(stop.orderId)?.hubId ?? 0)?.symbol }}
                     </span>
-                    <span class="ml-auto text-muted-foreground">
-                      {{ stop.arriveAt }}–{{ stop.departAt }}
+                    <span class="ml-auto inline-flex items-center gap-1 font-mono text-[11px]">
+                      <Clock class="size-3 text-muted-foreground" />
+                      {{ stop.arriveAt }}
                     </span>
+                  </div>
+                  <div class="text-[10px] text-muted-foreground">
+                    + {{ stop.distanceFromPrevKm.toFixed(1) }} km od poprzedniego ({{ stop.drivingFromPrevMin }} min)
                   </div>
                   <div class="truncate text-muted-foreground">
                     {{ vendorName(orderById.get(stop.orderId)?.vendorId ?? 0) }} ·

@@ -31,15 +31,23 @@ const STREETS = [
   'ul. Sportowa', 'ul. Piaskowa', 'ul. Leśna', 'ul. Wiśniowa', 'ul. Klonowa',
   'ul. Sosnowa', 'ul. Krzywa', 'ul. Stara', 'ul. Nowa', 'al. Jana Pawła II',
 ]
-const TIME_WINDOWS: [string, string][] = [
-  ['08:00', '12:00'],
-  ['09:00', '13:00'],
-  ['10:00', '14:00'],
-  ['12:00', '16:00'],
-  ['14:00', '18:00'],
-  ['16:00', '20:00'],
-  ['08:00', '20:00'], // pełne okno
+// Wagi: '08:00–20:00' to dominujące okno (większość zleceń bez doprecyzowania).
+const TIME_WINDOWS: { window: [string, string]; weight: number }[] = [
+  { window: ['08:00', '20:00'], weight: 5 },
+  { window: ['08:00', '12:00'], weight: 1 },
+  { window: ['12:00', '16:00'], weight: 1 },
+  { window: ['16:00', '20:00'], weight: 1 },
 ]
+
+function pickWindow(rng: () => number): [string, string] {
+  const total = TIME_WINDOWS.reduce((s, e) => s + e.weight, 0)
+  let r = rng() * total
+  for (const e of TIME_WINDOWS) {
+    r -= e.weight
+    if (r <= 0) return e.window
+  }
+  return TIME_WINDOWS[0]!.window
+}
 
 function pick<T>(rng: () => number, arr: readonly T[]): T {
   return arr[Math.floor(rng() * arr.length)]!
@@ -69,17 +77,19 @@ function generatePostalCode(rng: () => number): string {
 }
 
 function ordersForHub(rng: () => number, hub: Hub, idStart: number): DeliveryOrder[] {
+  // Cel ~17 stopów/trasa × liczba tras zwykle planowanych dla huba danego rozmiaru.
   const target =
-    hub.size === 'L' ? randInt(rng, 22, 28) : hub.size === 'M' ? randInt(rng, 16, 22) : randInt(rng, 12, 17)
+    hub.size === 'L' ? randInt(rng, 38, 50) : hub.size === 'M' ? randInt(rng, 24, 34) : randInt(rng, 15, 22)
   const orders: DeliveryOrder[] = []
   for (let i = 0; i < target; i++) {
-    const lonLat = randomNear(rng, hub.lonLat, 35) // do ~35 km od huba
+    // Promień ~55 km — przy ~17 stopach na trasie daje średni odcinek ~14 km między stopami (po NN).
+    const lonLat = randomNear(rng, hub.lonLat, 55)
     const vendor = pick(rng, vendors)
     const parcelCount = randInt(rng, 1, 6)
-    const weightKg = randFloat(rng, 5, 320, 1)
-    const volumeM3 = randFloat(rng, 0.05, 3.5, 2)
+    const weightKg = randFloat(rng, 50, 220, 1)
+    const volumeM3 = randFloat(rng, 0.3, 2.8, 2)
     const isCOD = rng() < 0.18
-    const window = pick(rng, TIME_WINDOWS)
+    const window = pickWindow(rng)
 
     const numServices = rng() < 0.55 ? randInt(rng, 1, 3) : 0
     const services: OrderService[] = []

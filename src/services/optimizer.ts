@@ -13,7 +13,7 @@ const COST_PER_KM_PLN = 4.5
 const COST_BASE_PER_ROUTE_PLN = 250
 const AVG_SPEED_KMH = 45
 const STOP_BASE_SERVICE_MIN = 15 // rozładunek
-const ORDERS_PER_ROUTE_TARGET = 7
+const ORDERS_PER_ROUTE_TARGET = 17
 
 const DRIVERS = [
   'Marek Kowalski', 'Tomasz Nowak', 'Krzysztof Wiśniewski', 'Andrzej Wójcik',
@@ -152,8 +152,8 @@ function packOrdersIntoRoutes(
   hubOrders: DeliveryOrder[],
 ): RoutePlan[] {
   if (hubOrders.length === 0 || hubVehicles.length === 0) return []
-  // Pozwalamy każdemu pojazdowi wziąć ~7 zleceń, ale nie więcej niż dostępnych pojazdów.
-  const desired = Math.max(1, Math.ceil(hubOrders.length / ORDERS_PER_ROUTE_TARGET))
+  // Cel: ~17 stopów na trasie. Dla 50 zleceń → 3 trasy × ~17, dla 20 → 1 trasa.
+  const desired = Math.max(1, Math.round(hubOrders.length / ORDERS_PER_ROUTE_TARGET))
   const routesCount = Math.min(desired, hubVehicles.length)
 
   // Sortuj zlecenia po dystansie od huba — daleko leżące na początek (zwykle dłuższe trasy).
