@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { ListChecks, Sun, Moon } from 'lucide-vue-next'
+import { ListChecks, Settings2, Sun, Moon } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import MapView from '@/components/Map.vue'
 import PlannerPanel from '@/components/PlannerPanel.vue'
+import PresetsPanel from '@/components/PresetsPanel.vue'
 import GestureCamera from '@/components/GestureCamera.vue'
 import HelpPopover from '@/components/HelpPopover.vue'
 import { cn } from '@/lib/utils'
@@ -12,8 +13,13 @@ import { usePlanner } from '@/composables/usePlanner'
 
 const planner = usePlanner()
 
-const panelOpen = ref(true)
+type ActivePanel = 'planner' | 'presets' | null
+const activePanel = ref<ActivePanel>('planner')
 const mapRef = ref<InstanceType<typeof MapView> | null>(null)
+
+function togglePanel(name: Exclude<ActivePanel, null>) {
+  activePanel.value = activePanel.value === name ? null : name
+}
 
 // Hover-zone w prawym górnym rogu — kontrolki domyślnie ukryte, fade-in 0.3 s przy najechaniu.
 const controlsHovered = ref(false)
@@ -80,7 +86,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleGlobalKey))
   <div class="relative h-screen w-screen overflow-hidden">
     <MapView ref="mapRef" :theme="theme" />
 
-    <PlannerPanel :open="panelOpen" @close="panelOpen = false" />
+    <PlannerPanel :open="activePanel === 'planner'" @close="activePanel = null" />
+    <PresetsPanel :open="activePanel === 'presets'" @close="activePanel = null" />
 
     <!-- Hover-zone: pełen obszar dla łapania kursora; kontrolki widoczne tylko przy hoverze. -->
     <div
@@ -95,11 +102,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleGlobalKey))
         )"
       >
         <Button
-          v-if="!panelOpen"
+          :variant="activePanel === 'planner' ? 'default' : 'outline'"
           size="icon"
           class="relative shadow-lg"
-          :title="`Otwórz panel planera — ${cardLabel}`"
-          @click="panelOpen = true"
+          :title="`Planer tras — ${cardLabel}`"
+          @click="togglePanel('planner')"
         >
           <ListChecks />
           <span
@@ -108,6 +115,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleGlobalKey))
           >
             {{ planner.state.solutions.length || planner.ordersForSelected.value.length }}
           </span>
+        </Button>
+
+        <Button
+          :variant="activePanel === 'presets' ? 'default' : 'outline'"
+          size="icon"
+          class="shadow-md"
+          title="Edytor presetów floty"
+          @click="togglePanel('presets')"
+        >
+          <Settings2 />
         </Button>
 
         <GestureCamera

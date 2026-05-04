@@ -96,6 +96,44 @@ export interface RoutePlan {
   stops: Stop[]
 }
 
+// === RouteSolver: presety floty (UI mockup) ===
+
+export interface CarFleetPreset {
+  id: number
+  name: string
+  hubId: number
+  isDefault: boolean
+  activeFrom: string | null // yyyy-mm-dd
+  activeTo: string | null
+  remarks: string
+}
+
+export interface CarFleetPresetItem {
+  id: number
+  presetId: number
+  position: number
+  carMaxCargoWeight: number // kg
+  carMaxCargoVolume: number // m³
+  workingFrom: string // HH:mm
+  workingTo: string // HH:mm
+  quantity: number
+  maxTaskCount: number
+  suggestedCarId: number | null // FK Tms.Car (mockowane jako null)
+  employeeIds: number[]
+  monday: boolean
+  tuesday: boolean
+  wednesday: boolean
+  thursday: boolean
+  friday: boolean
+  saturday: boolean
+  sunday: boolean
+  routeEndsInCustomLocation: boolean
+  routeEndLocation: [number, number] | null // [lon, lat]
+  carSpeedFactor: number // 1.0 = bez zmian
+  userTags: string[]
+  remarks: string
+}
+
 export interface Solution {
   id: string
   runId: string
