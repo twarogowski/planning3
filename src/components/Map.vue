@@ -253,7 +253,10 @@ onMounted(() => {
 
   map = new Map({
     target: mapEl.value,
-    controls: defaultControls({ attribution: true, zoom: true }).extend([
+    // Wyłączamy wszystkie natywne kontrolki (Zoom, Attribution, Rotate-kompas).
+    // Reset rotacji jest na klawiszu R; atrybucję OpenFreeMap/OpenMapTiles
+    // trzymamy w README aplikacji. Zostaje tylko ScaleLine na dole.
+    controls: defaultControls({ attribution: false, zoom: false, rotate: false }).extend([
       new ScaleLine({ units: 'metric' }),
     ]),
     view: new View({

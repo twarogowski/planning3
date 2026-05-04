@@ -29,6 +29,9 @@ const PALM_ZOOM_SENSITIVITY = 3.0
 const PALM_ZOOM_DEAD_ZONE = 0.003
 // Ile klatek z rzędu musi być "nie nasz gest", żeby wyjść z aktywnego trybu (tłumi jitter klasyfikatora).
 const IDLE_GRACE_FRAMES = 4
+// EMA współczynnik (0..1) dla wygładzania pozycji dłoni / kąta. Niższy = gładziej + większa latencja.
+// 0.35 daje ~3-klatkowy ogon (≈100 ms przy 30 FPS) — dobrze tłumi jitter MediaPipe bez zauważalnego lagu.
+const SMOOTH_ALPHA = 0.35
 
 interface Vec {
   x: number
@@ -52,6 +55,22 @@ function fistAngle(landmarks: Landmark[]): number {
   return Math.atan2(m.y - w.y, mx - wx)
 }
 
+function smoothVec(prev: Vec, next: Vec, alpha: number): Vec {
+  return {
+    x: prev.x + alpha * (next.x - prev.x),
+    y: prev.y + alpha * (next.y - prev.y),
+  }
+}
+
+// EMA dla kąta — najpierw rozwijamy nową próbkę do najbliższej kopii prev (bez przeskoku ±π),
+// potem standardowy α-blend.
+function smoothAngle(prev: number, next: number, alpha: number): number {
+  let diff = next - prev
+  while (diff > Math.PI) diff -= 2 * Math.PI
+  while (diff < -Math.PI) diff += 2 * Math.PI
+  return prev + alpha * diff
+}
+
 export function useGestureControl(events: GestureControlEvents) {
   const isActive = ref(false)
   const isLoading = ref(false)
@@ -67,6 +86,9 @@ export function useGestureControl(events: GestureControlEvents) {
   let lastPanPos: Vec | null = null
   let lastFistAngle: number | null = null
   let lastZoomY: number | null = null
+  let smoothedPalm: Vec | null = null
+  let smoothedAngle: number | null = null
+  let smoothedZoomY: number | null = null
   let idleFrames = 0
   let drawingUtils: DrawingUtils | null = null
 
@@ -76,6 +98,9 @@ export function useGestureControl(events: GestureControlEvents) {
     lastPanPos = null
     lastFistAngle = null
     lastZoomY = null
+    smoothedPalm = null
+    smoothedAngle = null
+    smoothedZoomY = null
     idleFrames = 0
     events.onModeChange?.(next)
   }
@@ -103,47 +128,60 @@ export function useGestureControl(events: GestureControlEvents) {
 
     if (cat === 'Closed_Fist') {
       idleFrames = 0
-      const center = palmCenter(hands[0])
-      const angle = fistAngle(hands[0])
+      const rawCenter = palmCenter(hands[0])
+      const rawAngle = fistAngle(hands[0])
       if (mode.value !== 'pan') {
         setMode('pan')
-        lastPanPos = center
-        lastFistAngle = angle
+        smoothedPalm = rawCenter
+        smoothedAngle = rawAngle
+        lastPanPos = rawCenter
+        lastFistAngle = rawAngle
         return
       }
+      // EMA na pozycji dłoni i kącie nadgarstka — wycina jitter MediaPipe.
+      smoothedPalm = smoothedPalm
+        ? smoothVec(smoothedPalm, rawCenter, SMOOTH_ALPHA)
+        : rawCenter
+      smoothedAngle =
+        smoothedAngle !== null ? smoothAngle(smoothedAngle, rawAngle, SMOOTH_ALPHA) : rawAngle
+
       if (lastPanPos) {
-        const dx = (center.x - lastPanPos.x) * PAN_SENSITIVITY
-        const dy = (center.y - lastPanPos.y) * PAN_SENSITIVITY
+        const dx = (smoothedPalm.x - lastPanPos.x) * PAN_SENSITIVITY
+        const dy = (smoothedPalm.y - lastPanPos.y) * PAN_SENSITIVITY
         if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) events.onPan?.(dx, dy)
       }
       if (lastFistAngle !== null) {
-        let dAngle = angle - lastFistAngle
+        let dAngle = smoothedAngle - lastFistAngle
         if (dAngle > Math.PI) dAngle -= 2 * Math.PI
         if (dAngle < -Math.PI) dAngle += 2 * Math.PI
         if (Math.abs(dAngle) > FIST_ROTATE_DEAD_ZONE) events.onRotate?.(dAngle)
       }
-      lastPanPos = center
-      lastFistAngle = angle
+      lastPanPos = smoothedPalm
+      lastFistAngle = smoothedAngle
       return
     }
 
     if (cat === 'Open_Palm') {
       idleFrames = 0
-      const center = palmCenter(hands[0])
+      const rawCenter = palmCenter(hands[0])
       if (mode.value !== 'zoom') {
         setMode('zoom')
-        lastZoomY = center.y
+        smoothedZoomY = rawCenter.y
+        lastZoomY = rawCenter.y
         return
       }
+      smoothedZoomY =
+        smoothedZoomY !== null
+          ? smoothedZoomY + SMOOTH_ALPHA * (rawCenter.y - smoothedZoomY)
+          : rawCenter.y
       if (lastZoomY !== null) {
-        const dy = center.y - lastZoomY // dodatnie = ręka w dół
+        const dy = smoothedZoomY - lastZoomY
         if (Math.abs(dy) > PALM_ZOOM_DEAD_ZONE) {
-          // ręka w górę (dy<0) → factor>1 → zoom in
           const factor = Math.exp(-dy * PALM_ZOOM_SENSITIVITY)
           events.onZoom?.(factor)
         }
       }
-      lastZoomY = center.y
+      lastZoomY = smoothedZoomY
       return
     }
 
